@@ -1,0 +1,62 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build PubSub Project",
+            "type": "shell",
+            "command": "g++",
+            "args": [
+                "-std=c++17",
+                "-Wall",
+                "-Wextra",
+                "-pthread",
+                "-I./src",
+                "src/main.cpp",
+                "src/Publisher.cpp",
+                "src/Subscriber.cpp",
+                "src/PubSubEngine.cpp",
+                "-o",
+                "pubsub_demo.exe"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": ["$gcc"],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Clean Build",
+            "type": "shell",
+            "windows": {
+                "command": "powershell",
+                "args": [
+                    "-Command",
+                    "Remove-Item -Path pubsub_demo.exe,src/*.o -ErrorAction SilentlyContinue"
+                ]
+            },
+            "linux": {
+                "command": "rm",
+                "args": ["-f", "pubsub_demo", "src/*.o"]
+            }
+        },
+        {
+            "label": "Build and Run",
+            "dependsOn": ["Build PubSub Project"],
+            "type": "shell",
+            "command": "${workspaceFolder}/pubsub_demo.exe",
+            "problemMatcher": [],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "shared"
+            }
+        }
+    ]
+}
