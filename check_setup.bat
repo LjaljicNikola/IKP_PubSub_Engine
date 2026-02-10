@@ -1,73 +1,59 @@
 @echo off
-REM Quick Setup Test for PubSub Project
-echo ================================================
-echo PubSub Project - Setup Verification
-echo ================================================
-echo.
+REM Check setup for PubSub Project
+REM Verifies required tools are installed and accessible
 
-REM Test 1: Check if g++ is installed
-echo [1/3] Checking g++ installation...
+echo.
+echo Checking PubSub Project Setup...
+echo ================================
+
+echo.
+echo [1] Checking for g++ compiler...
 where g++ >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] g++ not found!
-    echo.
-    echo You need to install MinGW or MSYS2 first.
-    echo Options:
-    echo   1. Download MinGW-w64: https://winlibs.com/
-    echo   2. Install MSYS2: https://www.msys2.org/
-    echo.
-    echo After installation, add the bin folder to your PATH.
-    pause
+if %errorlevel% equ 0 (
+    echo [OK] g++ found
+    g++ --version | findstr /R ".*"
+) else (
+    echo [FAIL] g++ not found in PATH
+    echo        MinGW is required. Install from: https://www.mingw-w64.org/
     exit /b 1
-) else (
-    echo [OK] g++ found!
-    g++ --version | findstr /C:"g++"
 )
-echo.
 
-REM Test 2: Check C++17 support
-echo [2/3] Checking C++17 support...
-echo int main() { return 0; } > test_cpp17.cpp
-g++ -std=c++17 test_cpp17.cpp -o test_cpp17.exe 2>nul
-if errorlevel 1 (
-    echo [ERROR] C++17 not supported!
-    echo Please update your g++ compiler to version 7 or newer.
-    del test_cpp17.cpp 2>nul
-    pause
+echo.
+echo [2] Checking for C++17 support...
+g++ -std=c++17 -dumpversion >nul 2>&1
+if %errorlevel% equ 0 (
+    echo [OK] C++17 support available
+) else (
+    echo [FAIL] C++17 not supported
     exit /b 1
-) else (
-    echo [OK] C++17 supported!
-    del test_cpp17.cpp test_cpp17.exe 2>nul
 )
-echo.
 
-REM Test 3: Check pthread support
-echo [3/3] Checking pthread support...
-echo #include ^<thread^> > test_thread.cpp
-echo int main() { return 0; } >> test_thread.cpp
-g++ -std=c++17 -pthread test_thread.cpp -o test_thread.exe 2>nul
-if errorlevel 1 (
-    echo [WARNING] pthread might have issues
-    echo Make sure you're using MinGW-w64 (not old MinGW)
-    del test_thread.cpp 2>nul
+echo.
+echo [3] Checking project structure...
+if exist "src" (
+    echo [OK] src/ directory found
 ) else (
-    echo [OK] pthread supported!
-    del test_thread.cpp test_thread.exe 2>nul
+    echo [FAIL] src/ directory not found
+    exit /b 1
 )
-echo.
 
-echo ================================================
-echo Setup verification complete!
-echo ================================================
+if exist "src\core" (
+    echo [OK] src/core/ directory found
+) else (
+    echo [FAIL] src/core/ directory not found
+    exit /b 1
+)
+
+if exist "src\utils" (
+    echo [OK] src/utils/ directory found
+) else (
+    echo [FAIL] src/utils/ directory not found
+    exit /b 1
+)
+
 echo.
-echo You're ready to compile the project!
+echo ================================
+echo Setup check complete!
 echo.
-echo Quick commands:
-echo   compile.bat              - Compile project
-echo   pubsub_demo.exe          - Run compiled program
+echo Run 'compile.bat' to build the project.
 echo.
-echo Or in VS Code:
-echo   Ctrl+Shift+B             - Build
-echo   F5                       - Debug
-echo.
-pause

@@ -15,8 +15,10 @@
                 "src/Publisher.cpp",
                 "src/Subscriber.cpp",
                 "src/PubSubEngine.cpp",
+                "src/Network.cpp",
                 "-o",
-                "pubsub_demo.exe"
+                "pubsub_demo.exe",
+                "-lws2_32"
             ],
             "group": {
                 "kind": "build",

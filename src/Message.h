@@ -1,79 +1,67 @@
 #ifndef MESSAGE_H
 #define MESSAGE_H
 
+#include <ctime>
 #include <cstring>
 
 // Enum for message types
 enum class MessageType {
-    ANALOG,    // For measurements (MER)
-    STATUS     // For switches (SWG) and circuit breakers (CRB)
-};
-
-// Enum for status values
-enum class StatusValue {
-    SWG_OPEN = 0,      // Switchgear open
-    SWG_CLOSED = 1,    // Switchgear closed
-    CRB_OPEN = 0,      // Circuit breaker open
-    CRB_CLOSED = 1     // Circuit breaker closed
+    ANALOG = 0,
+    STATUS = 1
 };
 
 // Enum for topic types
 enum class TopicType {
-    MER,    // Measurement (analog)
-    SWG,    // Switchgear (status)
-    CRB     // Circuit breaker (status)
+    MER = 0,
+    CRB = 1,
+    SWG = 2,
+    OTHER = 3
 };
 
-// Structure to hold message data
+// Enum for status values
+enum class StatusValue {
+    OPEN = 0,
+    CLOSED = 1,
+    SWG_OPEN = 2,
+    SWG_CLOSED = 3,
+    CRB_OPEN = 4,
+    CRB_CLOSED = 5
+};
+
+// Union to hold either analog value (float) or status value (enum)
+union MessageData {
+    float analogValue;
+    StatusValue statusValue;
+};
+
+// Message structure for Pub/Sub system
 struct Message {
-    char topic[64];           // Topic name (e.g., "Analog/MER/220", "Status/SWG/1")
-    MessageType type;         // Message type (analog or status)
-    TopicType topicType;      // Topic type (MER, SWG, CRB)
+    static const int MAX_TOPIC_LEN = 128;
+    static const int MAX_HOST_LEN = 64;
     
-    union {
-        float analogValue;    // For analog messages
-        StatusValue statusValue;  // For status messages
-    } data;
-    
-    long timestamp;           // Message timestamp
+    char topic[MAX_TOPIC_LEN];              // Topic name (e.g., "Analog/MER/220")
+    char publisher_host[MAX_HOST_LEN];      // Publisher host address
+    int publisher_port;                     // Publisher port number
+    MessageType type;                       // ANALOG or STATUS
+    TopicType topicType;                    // MER, CRB, or OTHER
+    MessageData data;                       // Holds either float value or StatusValue
+    std::time_t timestamp;                  // Message timestamp
     
     // Constructor
-    Message() : type(MessageType::ANALOG), topicType(TopicType::MER), timestamp(0) {
+    Message() 
+        : publisher_port(0), type(MessageType::ANALOG), topicType(TopicType::OTHER), timestamp(std::time(nullptr)) {
         topic[0] = '\0';
+        publisher_host[0] = '\0';
         data.analogValue = 0.0f;
     }
     
-    // Copy constructor
-    Message(const Message& other) {
-        strncpy(topic, other.topic, 63);
-        topic[63] = '\0';
-        type = other.type;
-        topicType = other.topicType;
-        timestamp = other.timestamp;
-        
-        if (type == MessageType::ANALOG) {
-            data.analogValue = other.data.analogValue;
-        } else {
-            data.statusValue = other.data.statusValue;
-        }
-    }
-    
-    // Assignment operator
-    Message& operator=(const Message& other) {
-        if (this != &other) {
-            strncpy(topic, other.topic, 63);
-            topic[63] = '\0';
-            type = other.type;
-            topicType = other.topicType;
-            timestamp = other.timestamp;
-            
-            if (type == MessageType::ANALOG) {
-                data.analogValue = other.data.analogValue;
-            } else {
-                data.statusValue = other.data.statusValue;
-            }
-        }
-        return *this;
+    // Constructor with topic
+    Message(const char* t, MessageType mt, TopicType tt, float val, std::time_t ts = std::time(nullptr))
+        : publisher_port(0), type(mt), topicType(tt), timestamp(ts) {
+        strncpy(topic, t, MAX_TOPIC_LEN - 1);
+        topic[MAX_TOPIC_LEN - 1] = '\0';
+        publisher_host[0] = '\0';
+        data.analogValue = val;
     }
 };
 

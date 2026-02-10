@@ -1,8 +1,7 @@
-#include "core/PubSubEngine.h"
-#include "core/Publisher.h"
-#include "core/Subscriber.h"
+#include "PubSubEngine.h"
+#include "Publisher.h"
+#include "Subscriber.h"
 #include "Network.h"
-#include "utils/CommandLineParser.h"
 #include <iostream>
 #include <vector>
 #include <string>
@@ -14,14 +13,13 @@ void printUsage() {
     std::cout << "  ./pubsub.exe --engine" << std::endl;
     std::cout << "    Start the PubSub Engine on port 5000" << std::endl;
     std::cout << std::endl;
-    std::cout << "  ./pubsub.exe --publisher [--port <port>] [--engine-host <host>] [--engine-port <port>]" << std::endl;
-    std::cout << "    Start a Publisher (auto-assigned if --port not specified)" << std::endl;
+    std::cout << "  ./pubsub.exe --publisher [--engine-host <host>] [--engine-port <port>]" << std::endl;
+    std::cout << "    Start a Publisher (auto-assigned port from 4100+)" << std::endl;
     std::cout << "    Default: localhost:5000" << std::endl;
-    std::cout << "    Example: ./pubsub.exe --publisher --port 4101 --engine-host localhost --engine-port 5000" << std::endl;
     std::cout << std::endl;
-    std::cout << "  ./pubsub.exe --subscriber --topic <topic1> [--topic <topic2>] ... [--port <port>] [--engine-host <host>] [--engine-port <port>]" << std::endl;
-    std::cout << "    Start a Subscriber (auto-assigned if --port not specified)" << std::endl;
-    std::cout << "    Example: ./pubsub.exe --subscriber --topic \"Analog/MER/220\" --port 4201 --engine-host localhost --engine-port 5000" << std::endl;
+    std::cout << "  ./pubsub.exe --subscriber --topic <topic1> [--topic <topic2>] ... [--engine-host <host>] [--engine-port <port>]" << std::endl;
+    std::cout << "    Start a Subscriber (auto-assigned port from 4200+)" << std::endl;
+    std::cout << "    Example: ./pubsub.exe --subscriber --topic \"Analog/MER/220\" --topic \"Status/SWG/1\"" << std::endl;
     std::cout << std::endl;
     std::cout << "In any service, type 'exit' to gracefully shutdown." << std::endl;
     std::cout << "=================================\n" << std::endl;
@@ -54,40 +52,70 @@ int main(int argc, char* argv[]) {
         
         engine.stop();
         std::cout << "Engine shutdown complete." << std::endl;
-        std::cout << "\nMain thread exiting..." << std::endl;
-        std::cout.flush();
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
         return 0;
     }
     
     // ========================= PUBLISHER MODE =========================
     else if (mode == "--publisher") {
-        auto args = CommandLineParser::parseCommonArgs(argc, argv, 2);
+        std::string engineHost = "localhost";
+        int enginePort = 5000;
+        
+        // Parse optional engine host/port
+        for (int i = 2; i < argc - 1; i++) {
+            std::string arg = argv[i];
+            if (arg == "--engine-host") {
+                engineHost = argv[i + 1];
+                i++;
+            } else if (arg == "--engine-port") {
+                enginePort = std::stoi(argv[i + 1]);
+                i++;
+            }
+        }
         
         std::cout << "\n=== Starting Publisher ===" << std::endl;
-        std::cout << "Connecting to engine at " << args.engineHost << ":" << args.enginePort << std::endl;
+        std::cout << "Connecting to engine at " << engineHost << ":" << enginePort << std::endl;
         std::cout << "Publishing messages every 2 seconds..." << std::endl;
         std::cout << "Type 'exit' to shutdown." << std::endl;
         
-        Publisher pub(1, args.engineHost, args.enginePort, args.port);
+        Publisher pub(1, engineHost, enginePort);
         pub.start();
         
+        // Keep running until user types 'exit'
         while (!ConsoleHandler::shouldExit()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
         
         pub.stop();
         std::cout << "Publisher shutdown complete." << std::endl;
-        std::cout << "\nMain thread exiting..." << std::endl;
-        std::cout.flush();
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
         return 0;
     }
     
     // ========================= SUBSCRIBER MODE =========================
     else if (mode == "--subscriber") {
-        auto topics = CommandLineParser::parseTopics(argc, argv);
-        auto args = CommandLineParser::parseCommonArgs(argc, argv, 2);
+        std::vector<std::string> topics;
+        std::string engineHost = "localhost";
+        int enginePort = 5000;
+        
+        // Parse topics and optional engine host/port
+        for (int i = 2; i < argc; i++) {
+            std::string arg = argv[i];
+            if (arg == "--topic") {
+                if (i + 1 < argc) {
+                    topics.push_back(argv[i + 1]);
+                    i++;
+                }
+            } else if (arg == "--engine-host") {
+                if (i + 1 < argc) {
+                    engineHost = argv[i + 1];
+                    i++;
+                }
+            } else if (arg == "--engine-port") {
+                if (i + 1 < argc) {
+                    enginePort = std::stoi(argv[i + 1]);
+                    i++;
+                }
+            }
+        }
         
         if (topics.empty()) {
             std::cerr << "Error: Subscriber requires at least one topic" << std::endl;
@@ -96,25 +124,23 @@ int main(int argc, char* argv[]) {
         }
         
         std::cout << "\n=== Starting Subscriber ===" << std::endl;
-        std::cout << "Connecting to engine at " << args.engineHost << ":" << args.enginePort << std::endl;
+        std::cout << "Connecting to engine at " << engineHost << ":" << enginePort << std::endl;
         std::cout << "Subscribed to " << topics.size() << " topic(s):" << std::endl;
         for (const auto& topic : topics) {
             std::cout << "  - " << topic << std::endl;
         }
         std::cout << "Type 'exit' to shutdown." << std::endl;
         
-        Subscriber sub(1, topics, args.engineHost, args.enginePort, args.port);
+        Subscriber sub(1, topics, engineHost, enginePort);
         sub.start();
         
+        // Keep running until user types 'exit'
         while (!ConsoleHandler::shouldExit()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
         
         sub.stop();
         std::cout << "Subscriber shutdown complete." << std::endl;
-        std::cout << "\nMain thread exiting..." << std::endl;
-        std::cout.flush();
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
         return 0;
     }
     

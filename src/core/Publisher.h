@@ -1,29 +1,30 @@
 #ifndef PUBLISHER_H
 #define PUBLISHER_H
 
-#include "Message.h"
+#include "../Message.h"
+#include "../Network.h"
+#include "../Serialization.h"
 #include <thread>
 #include <atomic>
-
-// Forward declaration
-class PubSubEngine;
+#include <string>
 
 class Publisher {
 private:
     int id;                           // Publisher ID
-    PubSubEngine* engine;             // Pointer to PubSub Engine
+    int myPort;                       // Assigned port for this publisher
+    std::string engineHost;           // Engine host address
+    int enginePort;                   // Engine port
+    TcpClient engineClient;           // Client connection to engine
     std::thread workerThread;         // Thread for publishing
     std::atomic<bool> running;        // Flag to control thread
     
     // Worker function that publishes messages
     void publishLoop();
     
-    // Validate message before sending
-    bool validateMessage(const Message& msg);
-    
 public:
     // Constructor
-    Publisher(int publisherId, PubSubEngine* pubsubEngine);
+    // If port is 0 or negative, auto-assign from PortPool
+    Publisher(int publisherId, const std::string& engine_host = "localhost", int engine_port = 5000, int port = 0);
     
     // Destructor
     ~Publisher();

@@ -7,9 +7,14 @@ TARGET = pubsub_demo
 
 # Source files
 SOURCES = src/main.cpp \
-          src/Publisher.cpp \
-          src/Subscriber.cpp \
-          src/PubSubEngine.cpp
+          src/core/Publisher.cpp \
+          src/core/Subscriber.cpp \
+          src/core/PubSubEngine.cpp \
+          src/Network.cpp \
+          src/utils/MessageValidator.cpp \
+          src/utils/CommandLineParser.cpp \
+          src/utils/NetworkUtils.cpp \
+          src/utils/MessageFormatter.cpp
 
 # Object files
 OBJECTS = $(SOURCES:.cpp=.o)
