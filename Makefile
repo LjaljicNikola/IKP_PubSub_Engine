@@ -11,6 +11,7 @@ SOURCES = src/main.cpp \
           src/core/Subscriber.cpp \
           src/core/PubSubEngine.cpp \
           src/Network.cpp \
+          src/monitor/HttpServer.cpp \
           src/utils/MessageValidator.cpp \
           src/utils/CommandLineParser.cpp \
           src/utils/NetworkUtils.cpp \

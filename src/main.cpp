@@ -2,6 +2,7 @@
 #include "core/Publisher.h"
 #include "core/Subscriber.h"
 #include "Network.h"
+#include "monitor/HttpServer.h"
 #include "utils/CommandLineParser.h"
 #include <iostream>
 #include <vector>
@@ -46,6 +47,10 @@ int main(int argc, char* argv[]) {
         
         PubSubEngine engine;
         engine.start();
+
+        // Pokreni HTTP monitoring dashboard na portu 8080
+        HttpServer httpServer(&engine, 8080);
+        httpServer.start();
         
         // Keep running until user types 'exit'
         while (!ConsoleHandler::shouldExit()) {
@@ -53,6 +58,7 @@ int main(int argc, char* argv[]) {
         }
         
         engine.stop();
+        httpServer.stop();
         std::cout << "Engine shutdown complete." << std::endl;
         std::cout << "\nMain thread exiting..." << std::endl;
         std::cout.flush();
@@ -62,20 +68,27 @@ int main(int argc, char* argv[]) {
     
     // ========================= PUBLISHER MODE =========================
     else if (mode == "--publisher") {
-        auto args = CommandLineParser::parseCommonArgs(argc, argv, 2);
-        
+        auto args      = CommandLineParser::parseCommonArgs(argc, argv, 2);
+        auto pubTopics = CommandLineParser::parseTopics(argc, argv);
+
         std::cout << "\n=== Starting Publisher ===" << std::endl;
         std::cout << "Connecting to engine at " << args.engineHost << ":" << args.enginePort << std::endl;
-        std::cout << "Publishing messages every 2 seconds..." << std::endl;
+        if (pubTopics.empty()) {
+            std::cout << "Topics: Analog/MER/220, Status/SWG/1, Status/CRB/1 (podrazumevano)" << std::endl;
+        } else {
+            std::cout << "Topics: ";
+            for (const auto& t : pubTopics) std::cout << t << " ";
+            std::cout << std::endl;
+        }
         std::cout << "Type 'exit' to shutdown." << std::endl;
-        
-        Publisher pub(1, args.engineHost, args.enginePort, args.port);
+
+        Publisher pub(1, args.engineHost, args.enginePort, args.port, pubTopics);
         pub.start();
-        
+
         while (!ConsoleHandler::shouldExit()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
-        
+
         pub.stop();
         std::cout << "Publisher shutdown complete." << std::endl;
         std::cout << "\nMain thread exiting..." << std::endl;

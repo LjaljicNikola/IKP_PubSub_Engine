@@ -1,10 +1,15 @@
 #include "PubSubEngine.h"
 #include <iostream>
 #include <cstring>
+#include <cstdio>
 #include <chrono>
 
-PubSubEngine::PubSubEngine() : numTopics(0), running(false) {
+PubSubEngine::PubSubEngine()
+    : numTopics(0), running(false),
+    recentHead(0), recentCount(0), totalMessages(0)
+{
     topics = new TopicEntry[MAX_TOPICS];
+    startTime = std::time(nullptr);
 }
 
 PubSubEngine::~PubSubEngine() {
@@ -15,19 +20,19 @@ PubSubEngine::~PubSubEngine() {
 void PubSubEngine::start() {
     if (!running) {
         running = true;
-        
+
         int enginePort = PortPool::getEnginePort();
         if (!server.start(enginePort)) {
             std::cerr << "[PubSubEngine] Failed to start server on port " << enginePort << std::endl;
             running = false;
             return;
         }
-        
+
         std::cout << "[PubSubEngine] Engine started on port " << enginePort << std::endl;
-        
+
         acceptThread = std::thread(&PubSubEngine::acceptConnections, this);
         acceptThread.detach();
-        
+
         // Start validation thread for subscriber health checks
         validationThread = std::thread(&PubSubEngine::validateSubscribers, this);
         validationThread.detach();
@@ -46,53 +51,55 @@ void PubSubEngine::stop() {
 void PubSubEngine::acceptConnections() {
     while (running && !ConsoleHandler::shouldExit()) {
         std::vector<uint8_t> data = server.receiveMessage();
-        
+
         if (data.empty()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             continue;
         }
-        
+
         // Parse command: [command(1)] [data...]
         if (data.empty()) continue;
-        
+
         uint8_t cmd = data[0];
-        
+
         if (cmd == 0) {
             // PUBLISH command: [data...]
             // The rest is a serialized Message
             Message msg = Serialization::deserialize(data.data() + 1, data.size() - 1);
             publish(msg);
-        } else if (cmd == 1) {
+        }
+        else if (cmd == 1) {
             // SUBSCRIBE command: [port(4)] [topic_len(1)] [topic...]
             if (data.size() < 6) continue;
-            
+
             uint32_t port_val = ((uint32_t)data[1] << 24) |
-                                ((uint32_t)data[2] << 16) |
-                                ((uint32_t)data[3] << 8) |
-                                (uint32_t)data[4];
-            
+                ((uint32_t)data[2] << 16) |
+                ((uint32_t)data[3] << 8) |
+                (uint32_t)data[4];
+
             uint8_t topic_len = data[5];
             if (data.size() < static_cast<size_t>(6 + topic_len)) continue;
-            
+
             char topic[65];
             memcpy(topic, &data[6], topic_len);
             topic[topic_len] = '\0';
-            
+
             subscribeInternal(topic, port_val);
-        } else if (cmd == 2) {
+        }
+        else if (cmd == 2) {
             // UNSUBSCRIBE command: [topic_len(1)] [topic...]
             if (data.size() < 2) continue;
-            
+
             uint8_t topic_len = data[1];
             if (data.size() < static_cast<size_t>(2 + topic_len)) continue;
-            
+
             char topic[65];
             memcpy(topic, &data[2], topic_len);
             topic[topic_len] = '\0';
-            
+
             unsubscribeInternal(topic, 0);
         }
-        
+
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 }
@@ -101,18 +108,18 @@ int PubSubEngine::hashTopic(const char* topic) const {
     unsigned long hash = 5381;
     int c;
     const char* str = topic;
-    
+
     while ((c = *str++)) {
         hash = ((hash << 5) + hash) + c;
     }
-    
+
     return hash % MAX_TOPICS;
 }
 
 int PubSubEngine::findTopicIndex(const char* topic) const {
     int index = hashTopic(topic);
     int originalIndex = index;
-    
+
     while (topics[index].occupied) {
         if (strcmp(topics[index].topic, topic) == 0) {
             return index;
@@ -122,26 +129,26 @@ int PubSubEngine::findTopicIndex(const char* topic) const {
             break;  // Pun krug, nije pronadjen
         }
     }
-    
+
     return -1;  // Nije pronadjen
 }
 
 PubSubEngine::TopicEntry* PubSubEngine::getOrCreateTopic(const char* topic) {
     int index = findTopicIndex(topic);
-    
+
     if (index != -1) {
         return &topics[index];
     }
-    
+
     // Kreiranje novog topic-a
     if (numTopics >= MAX_TOPICS) {
         std::cout << "[PubSubEngine] GRESKA: Dostignut maksimalan broj topic-a!" << std::endl;
         return nullptr;
     }
-    
+
     index = hashTopic(topic);
     int originalIndex = index;
-    
+
     // Linear probing da pronadje prazan slot
     while (topics[index].occupied) {
         index = (index + 1) % MAX_TOPICS;
@@ -150,54 +157,56 @@ PubSubEngine::TopicEntry* PubSubEngine::getOrCreateTopic(const char* topic) {
             return nullptr;
         }
     }
-    
+
     // Inicijalizacija novog topic-a
     strncpy(topics[index].topic, topic, 63);
     topics[index].topic[63] = '\0';
     topics[index].occupied = true;
     numTopics++;
-    
+
     std::cout << "[PubSubEngine] Kreiran novi topic: " << topic << std::endl;
-    
+
     return &topics[index];
 }
 
 void PubSubEngine::subscribeInternal(const char* topic, int subscriberPort) {
     std::lock_guard<std::mutex> lock(engineMutex);
-    
+
     TopicEntry* entry = getOrCreateTopic(topic);
     if (entry == nullptr) {
         return;
     }
-    
+
     // Check if already subscribed
     SubscriberAddress addr(subscriberPort);
     if (!entry->subscribers.contains(addr)) {
         entry->subscribers.pushBack(addr);
-        std::cout << "[PubSubEngine] Subscriber on port " << subscriberPort 
-                  << " subscribed to topic: " << topic << std::endl;
-    } else {
-        std::cout << "[PubSubEngine] Subscriber on port " << subscriberPort 
-                  << " already subscribed to topic: " << topic << std::endl;
+        std::cout << "[PubSubEngine] Subscriber on port " << subscriberPort
+            << " subscribed to topic: " << topic << std::endl;
+    }
+    else {
+        std::cout << "[PubSubEngine] Subscriber on port " << subscriberPort
+            << " already subscribed to topic: " << topic << std::endl;
     }
 }
 
 void PubSubEngine::unsubscribeInternal(const char* topic, int subscriberPort) {
     std::lock_guard<std::mutex> lock(engineMutex);
-    
+
     int index = findTopicIndex(topic);
     if (index == -1) {
         std::cout << "[PubSubEngine] Topic not found: " << topic << std::endl;
         return;
     }
-    
+
     SubscriberAddress addr(subscriberPort);
     if (topics[index].subscribers.remove(addr)) {
-        std::cout << "[PubSubEngine] Subscriber on port " << subscriberPort 
-                  << " unsubscribed from topic: " << topic << std::endl;
-    } else {
-        std::cout << "[PubSubEngine] Subscriber on port " << subscriberPort 
-                  << " was not subscribed to topic: " << topic << std::endl;
+        std::cout << "[PubSubEngine] Subscriber on port " << subscriberPort
+            << " unsubscribed from topic: " << topic << std::endl;
+    }
+    else {
+        std::cout << "[PubSubEngine] Subscriber on port " << subscriberPort
+            << " was not subscribed to topic: " << topic << std::endl;
     }
 }
 
@@ -206,53 +215,94 @@ void PubSubEngine::deliverToSubscriber(const SubscriberAddress& addr, const Mess
     TcpClient client;
     if (client.connect("localhost", addr.port)) {
         if (client.sendMessage(serialized)) {
-            std::cout << "[PubSubEngine:DELIVERY] Message published to topic '" << msg.topic 
-                      << "' -> Subscriber on port " << addr.port << " [SUCCESS]" << std::endl;
-        } else {
+            std::cout << "[PubSubEngine:DELIVERY] Message published to topic '" << msg.topic
+                << "' -> Subscriber on port " << addr.port << " [SUCCESS]" << std::endl;
+        }
+        else {
             std::cerr << "[PubSubEngine:DELIVERY] Failed to send to port " << addr.port << std::endl;
         }
         client.disconnect();
-    } else {
+    }
+    else {
         std::cerr << "[PubSubEngine:DELIVERY] Failed to connect to port " << addr.port << std::endl;
     }
 }
 
 void PubSubEngine::publish(const Message& msg) {
     std::lock_guard<std::mutex> lock(engineMutex);
-    
+
     int index = findTopicIndex(msg.topic);
     if (index == -1) {
         std::cout << "[PubSubEngine] Nema pretplatnika za topic: " << msg.topic << std::endl;
         return;
     }
-    
+
     TopicEntry& entry = topics[index];
-    
+
     // Save message to buffer
     entry.messageBuffer.push(msg);
     std::cout << "[PubSubEngine] Message published to topic '" << msg.topic << "'" << std::endl;
-    
+
+    // --- Azuriraj statistike ---
+    entry.messageCount++;
+    totalMessages++;
+
+    // Formatuj zadnju vrijednost kao string
+    if (msg.type == MessageType::ANALOG) {
+        snprintf(entry.lastValue, sizeof(entry.lastValue), "%.2f", msg.data.analogValue);
+        strncpy(entry.topicType, "ANALOG", sizeof(entry.topicType) - 1);
+    }
+    else {
+        const char* sv = "UNKNOWN";
+        switch (msg.data.statusValue) {
+        case StatusValue::OPEN:       sv = "OPEN";       break;
+        case StatusValue::CLOSED:     sv = "CLOSED";     break;
+        case StatusValue::SWG_OPEN:   sv = "SWG_OPEN";   break;
+        case StatusValue::SWG_CLOSED: sv = "SWG_CLOSED"; break;
+        case StatusValue::CRB_OPEN:   sv = "CRB_OPEN";   break;
+        case StatusValue::CRB_CLOSED: sv = "CRB_CLOSED"; break;
+        }
+        strncpy(entry.lastValue, sv, sizeof(entry.lastValue) - 1);
+        strncpy(entry.topicType, "STATUS", sizeof(entry.topicType) - 1);
+    }
+
+    // Formatuj timestamp
+    std::time_t ts = msg.timestamp;
+    std::tm* tmInfo = std::localtime(&ts);
+    std::strftime(entry.lastTime, sizeof(entry.lastTime), "%H:%M:%S", tmInfo);
+
+    // Dodaj u cirkularan buffer zadnjih MAX_RECENT poruka
+    RecentMsg& rec = recentMessages[recentHead];
+    strncpy(rec.topic, msg.topic, sizeof(rec.topic) - 1);
+    strncpy(rec.type, entry.topicType, sizeof(rec.type) - 1);
+    strncpy(rec.value, entry.lastValue, sizeof(rec.value) - 1);
+    strncpy(rec.time, entry.lastTime, sizeof(rec.time) - 1);
+    snprintf(rec.publisher, sizeof(rec.publisher), "%s:%d",
+        msg.publisher_host, msg.publisher_port);
+    recentHead = (recentHead + 1) % MAX_RECENT;
+    if (recentCount < MAX_RECENT) recentCount++;
+
     // Serialize message once
     std::vector<uint8_t> serialized = Serialization::serialize(msg);
-    
+
     // Get subscriber list snapshot (to avoid holding lock during delivery)
     std::vector<SubscriberAddress> subscribersCopy;
     for (auto it = entry.subscribers.begin(); it != entry.subscribers.end(); ++it) {
         subscribersCopy.push_back(*it);
     }
-    
+
     int totalSubscribers = subscribersCopy.size();
     std::cout << "[PubSubEngine] Delivering to " << totalSubscribers << " subscriber(s)..." << std::endl;
-    
+
     // Release lock before spawning delivery threads
     lock.~lock_guard();
-    
+
     // Spawn a thread for each subscriber to deliver in parallel
     std::vector<std::thread> deliveryThreads;
     for (const auto& addr : subscribersCopy) {
         deliveryThreads.emplace_back(&PubSubEngine::deliverToSubscriber, this, addr, msg, serialized);
     }
-    
+
     // Detach threads to allow publish() to return immediately
     for (auto& t : deliveryThreads) {
         if (t.joinable()) {
@@ -263,12 +313,12 @@ void PubSubEngine::publish(const Message& msg) {
 
 int PubSubEngine::getSubscriberCount(const char* topic) {
     std::lock_guard<std::mutex> lock(engineMutex);
-    
+
     int index = findTopicIndex(topic);
     if (index == -1) {
         return 0;
     }
-    
+
     return topics[index].subscribers.size();
 }
 
@@ -276,33 +326,34 @@ void PubSubEngine::validateSubscribers() {
     // Periodically validate that all registered subscribers are reachable
     while (running && !ConsoleHandler::shouldExit()) {
         std::this_thread::sleep_for(std::chrono::seconds(5));
-        
+
         std::lock_guard<std::mutex> lock(engineMutex);
-        
+
         // Check each topic's subscribers
         for (int i = 0; i < MAX_TOPICS; i++) {
             if (!topics[i].occupied) continue;
-            
+
             std::vector<SubscriberAddress> deadSubscribers;
-            
+
             // Test connection to each subscriber
             for (auto it = topics[i].subscribers.begin(); it != topics[i].subscribers.end(); ++it) {
                 TcpClient testClient;
                 if (!testClient.connect("localhost", it->port)) {
                     // Subscriber is unreachable
                     deadSubscribers.push_back(*it);
-                    std::cout << "[PubSubEngine:VALIDATION] Subscriber on port " << it->port 
-                              << " is unreachable for topic '" << topics[i].topic << "'" << std::endl;
-                } else {
+                    std::cout << "[PubSubEngine:VALIDATION] Subscriber on port " << it->port
+                        << " is unreachable for topic '" << topics[i].topic << "'" << std::endl;
+                }
+                else {
                     testClient.disconnect();
                 }
             }
-            
+
             // Remove dead subscribers
             for (const auto& dead : deadSubscribers) {
                 topics[i].subscribers.remove(dead);
-                std::cout << "[PubSubEngine:VALIDATION] Removed unreachable subscriber on port " 
-                          << dead.port << " from topic '" << topics[i].topic << "'" << std::endl;
+                std::cout << "[PubSubEngine:VALIDATION] Removed unreachable subscriber on port "
+                    << dead.port << " from topic '" << topics[i].topic << "'" << std::endl;
             }
         }
     }
@@ -310,7 +361,7 @@ void PubSubEngine::validateSubscribers() {
 
 void PubSubEngine::getAllTopics(char topicList[][64], int& count, int maxCount) {
     std::lock_guard<std::mutex> lock(engineMutex);
-    
+
     count = 0;
     for (int i = 0; i < MAX_TOPICS && count < maxCount; i++) {
         if (topics[i].occupied) {
@@ -319,4 +370,69 @@ void PubSubEngine::getAllTopics(char topicList[][64], int& count, int maxCount) 
             count++;
         }
     }
+}
+
+// ============================================================
+//  getStatsJson — vraca JSON za HTTP monitoring dashboard
+// ============================================================
+std::string PubSubEngine::getStatsJson() {
+    std::lock_guard<std::mutex> lock(engineMutex);
+
+    time_t now = std::time(nullptr);
+    long  uptime = static_cast<long>(now - startTime);
+
+    // Ukupno pretplatnika (suma po svim topikima)
+    int totalSubs = 0;
+    for (int i = 0; i < MAX_TOPICS; i++) {
+        if (topics[i].occupied) {
+            totalSubs += topics[i].subscribers.size();
+        }
+    }
+
+    std::string j = "{\n";
+    j += "  \"uptime\": " + std::to_string(uptime) + ",\n";
+    j += "  \"totalMessages\": " + std::to_string(totalMessages) + ",\n";
+    j += "  \"totalTopics\": " + std::to_string(numTopics) + ",\n";
+    j += "  \"totalSubscribers\": " + std::to_string(totalSubs) + ",\n";
+
+    // --- Niz topika ---
+    j += "  \"topics\": [\n";
+    bool firstTopic = true;
+    for (int i = 0; i < MAX_TOPICS; i++) {
+        if (!topics[i].occupied) continue;
+        if (!firstTopic) j += ",\n";
+        firstTopic = false;
+
+        j += "    {\n";
+        j += "      \"name\": \"" + std::string(topics[i].topic) + "\",\n";
+        j += "      \"type\": \"" + std::string(topics[i].topicType) + "\",\n";
+        j += "      \"subscribers\": " + std::to_string(topics[i].subscribers.size()) + ",\n";
+        j += "      \"messages\": " + std::to_string(topics[i].messageCount) + ",\n";
+        j += "      \"lastValue\": \"" + std::string(topics[i].lastValue) + "\",\n";
+        j += "      \"lastTime\": \"" + std::string(topics[i].lastTime) + "\"\n";
+        j += "    }";
+    }
+    j += "\n  ],\n";
+
+    // --- Niz zadnjih poruka (hronoloski, od najstarijeg) ---
+    j += "  \"recentMessages\": [\n";
+    bool firstMsg = true;
+    int  start = (recentCount < MAX_RECENT) ? 0 : recentHead;
+    for (int i = 0; i < recentCount; i++) {
+        int idx = (start + i) % MAX_RECENT;
+        if (!firstMsg) j += ",\n";
+        firstMsg = false;
+
+        j += "    {\n";
+        j += "      \"topic\": \"" + std::string(recentMessages[idx].topic) + "\",\n";
+        j += "      \"type\": \"" + std::string(recentMessages[idx].type) + "\",\n";
+        j += "      \"value\": \"" + std::string(recentMessages[idx].value) + "\",\n";
+        j += "      \"time\": \"" + std::string(recentMessages[idx].time) + "\",\n";
+        j += "      \"publisher\": \"" + std::string(recentMessages[idx].publisher) + "\"\n";
+        j += "    }";
+    }
+    j += "\n  ]\n";
+    j += "}";
+
+    return j;
 }

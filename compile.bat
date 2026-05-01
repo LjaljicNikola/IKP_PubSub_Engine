@@ -10,6 +10,9 @@ REM Clean previous build (remove object files but keep exe)
 echo Cleaning previous build...
 for /r "src" %%f in (*.o) do del "%%f" 2>nul
 
+REM Kreiraj monitor direktorij ako ne postoji
+if not exist "src\monitor" mkdir "src\monitor"
+
 REM Compile individual source files
 echo.
 echo Compiling...
@@ -36,6 +39,10 @@ echo Compiling src/core/PubSubEngine.cpp...
 g++ %CXXFLAGS% -c src/core/PubSubEngine.cpp -o src/core/PubSubEngine.o
 if errorlevel 1 goto :error
 
+echo Compiling src/monitor/HttpServer.cpp...
+g++ %CXXFLAGS% -c src/monitor/HttpServer.cpp -o src/monitor/HttpServer.o
+if errorlevel 1 goto :error
+
 echo Compiling src/utils/MessageValidator.cpp...
 g++ %CXXFLAGS% -c src/utils/MessageValidator.cpp -o src/utils/MessageValidator.o
 if errorlevel 1 goto :error
@@ -55,7 +62,7 @@ if errorlevel 1 goto :error
 REM Link all object files
 echo.
 echo Linking...
-g++ %CXXFLAGS% -o pubsub.exe src/main.o src/Network.o src/core/Publisher.o src/core/Subscriber.o src/core/PubSubEngine.o src/utils/MessageValidator.o src/utils/CommandLineParser.o src/utils/NetworkUtils.o src/utils/MessageFormatter.o -lws2_32
+g++ %CXXFLAGS% -o pubsub.exe src/main.o src/Network.o src/core/Publisher.o src/core/Subscriber.o src/core/PubSubEngine.o src/monitor/HttpServer.o src/utils/MessageValidator.o src/utils/CommandLineParser.o src/utils/NetworkUtils.o src/utils/MessageFormatter.o -lws2_32
 if errorlevel 1 goto :error
 
 echo.
