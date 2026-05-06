@@ -58,8 +58,8 @@
               "Title": "start_all.bat",
               "DocumentMoniker": "C:\\Fakultet\\4. godina\\Zimski\\IKP\\PubSub_Nadogradnja\\IKP_PubSub_Engine\\start_all.bat",
               "RelativeDocumentMoniker": "start_all.bat",
-              "ToolTip": "C:\\Fakultet\\4. godina\\Zimski\\IKP\\PubSub_Nadogradnja\\IKP_PubSub_Engine\\start_all.bat",
-              "RelativeToolTip": "start_all.bat",
+              "ToolTip": "C:\\Fakultet\\4. godina\\Zimski\\IKP\\PubSub_Nadogradnja\\IKP_PubSub_Engine\\start_all.bat*",
+              "RelativeToolTip": "start_all.bat*",
               "ViewState": "AgIAAAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000614|",
               "WhenOpened": "2026-04-22T19:14:30.774Z",
@@ -86,7 +86,8 @@
               "RelativeToolTip": "README.md",
               "ViewState": "AgIAAIwBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
-              "WhenOpened": "2026-04-22T19:12:16.305Z"
+              "WhenOpened": "2026-04-22T19:12:16.305Z",
+              "EditorCaption": ""
             }
           ]
         },

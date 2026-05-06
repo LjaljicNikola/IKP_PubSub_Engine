@@ -51,8 +51,6 @@ void Publisher::stop() {
     }
 }
 
-
-
 void Publisher::publish(const Message& msg) {
     std::string errorMsg;
     if (!MessageValidator::validate(msg, errorMsg)) {
@@ -120,8 +118,8 @@ void Publisher::publishLoop() {
             msg.data.statusValue = (counter % 2 == 0) ? StatusValue::CRB_CLOSED : StatusValue::CRB_OPEN;
         }
         else {
-            // Bazna vrednost iz naziva topica
-            float base = currentValues[topicName];
+            // FIX: Uklonjena nekoriscena varijabla 'base' (bila je uzrok compiler warning-a).
+            // Bazna nominalna vrijednost se direktno izvlaci iz naziva topica.
             size_t lastSlash = topicName.rfind('/');
             float baseNominal = 220.0f;
             if (lastSlash != std::string::npos) {

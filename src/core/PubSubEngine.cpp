@@ -229,75 +229,85 @@ void PubSubEngine::deliverToSubscriber(const SubscriberAddress& addr, const Mess
 }
 
 void PubSubEngine::publish(const Message& msg) {
-    std::lock_guard<std::mutex> lock(engineMutex);
+    // ----------------------------------------------------------------
+    // FIX: Koristimo scoped blok za lock_guard umjesto rucnog pozivanja
+    // destruktora (lock.~lock_guard() je undefined behaviour jer se
+    // destruktor poziva drugi put na kraju scope-a).
+    // Sve sto treba mutex zastititi ide unutar { }, a spawning threadova
+    // je van locka - kao i prije, ali sada ispravno.
+    // ----------------------------------------------------------------
 
-    int index = findTopicIndex(msg.topic);
-    if (index == -1) {
-        std::cout << "[PubSubEngine] Nema pretplatnika za topic: " << msg.topic << std::endl;
-        return;
-    }
-
-    TopicEntry& entry = topics[index];
-
-    // Save message to buffer
-    entry.messageBuffer.push(msg);
-    std::cout << "[PubSubEngine] Message published to topic '" << msg.topic << "'" << std::endl;
-
-    // --- Azuriraj statistike ---
-    entry.messageCount++;
-    totalMessages++;
-
-    // Formatuj zadnju vrijednost kao string
-    if (msg.type == MessageType::ANALOG) {
-        snprintf(entry.lastValue, sizeof(entry.lastValue), "%.2f", msg.data.analogValue);
-        strncpy(entry.topicType, "ANALOG", sizeof(entry.topicType) - 1);
-    }
-    else {
-        const char* sv = "UNKNOWN";
-        switch (msg.data.statusValue) {
-        case StatusValue::OPEN:       sv = "OPEN";       break;
-        case StatusValue::CLOSED:     sv = "CLOSED";     break;
-        case StatusValue::SWG_OPEN:   sv = "SWG_OPEN";   break;
-        case StatusValue::SWG_CLOSED: sv = "SWG_CLOSED"; break;
-        case StatusValue::CRB_OPEN:   sv = "CRB_OPEN";   break;
-        case StatusValue::CRB_CLOSED: sv = "CRB_CLOSED"; break;
-        }
-        strncpy(entry.lastValue, sv, sizeof(entry.lastValue) - 1);
-        strncpy(entry.topicType, "STATUS", sizeof(entry.topicType) - 1);
-    }
-
-    // Formatuj timestamp
-    std::time_t ts = msg.timestamp;
-    std::tm* tmInfo = std::localtime(&ts);
-    std::strftime(entry.lastTime, sizeof(entry.lastTime), "%H:%M:%S", tmInfo);
-
-    // Dodaj u cirkularan buffer zadnjih MAX_RECENT poruka
-    RecentMsg& rec = recentMessages[recentHead];
-    strncpy(rec.topic, msg.topic, sizeof(rec.topic) - 1);
-    strncpy(rec.type, entry.topicType, sizeof(rec.type) - 1);
-    strncpy(rec.value, entry.lastValue, sizeof(rec.value) - 1);
-    strncpy(rec.time, entry.lastTime, sizeof(rec.time) - 1);
-    snprintf(rec.publisher, sizeof(rec.publisher), "%s:%d",
-        msg.publisher_host, msg.publisher_port);
-    recentHead = (recentHead + 1) % MAX_RECENT;
-    if (recentCount < MAX_RECENT) recentCount++;
-
-    // Serialize message once
-    std::vector<uint8_t> serialized = Serialization::serialize(msg);
-
-    // Get subscriber list snapshot (to avoid holding lock during delivery)
     std::vector<SubscriberAddress> subscribersCopy;
-    for (auto it = entry.subscribers.begin(); it != entry.subscribers.end(); ++it) {
-        subscribersCopy.push_back(*it);
-    }
+    std::vector<uint8_t> serialized;
 
-    int totalSubscribers = subscribersCopy.size();
+    {
+        std::lock_guard<std::mutex> lock(engineMutex);
+
+        int index = findTopicIndex(msg.topic);
+        if (index == -1) {
+            std::cout << "[PubSubEngine] Nema pretplatnika za topic: " << msg.topic << std::endl;
+            return;
+        }
+
+        TopicEntry& entry = topics[index];
+
+        // Save message to buffer
+        entry.messageBuffer.push(msg);
+        std::cout << "[PubSubEngine] Message published to topic '" << msg.topic << "'" << std::endl;
+
+        // --- Azuriraj statistike ---
+        entry.messageCount++;
+        totalMessages++;
+
+        // Formatuj zadnju vrijednost kao string
+        if (msg.type == MessageType::ANALOG) {
+            snprintf(entry.lastValue, sizeof(entry.lastValue), "%.2f", msg.data.analogValue);
+            strncpy(entry.topicType, "ANALOG", sizeof(entry.topicType) - 1);
+        }
+        else {
+            const char* sv = "UNKNOWN";
+            switch (msg.data.statusValue) {
+            case StatusValue::OPEN:       sv = "OPEN";       break;
+            case StatusValue::CLOSED:     sv = "CLOSED";     break;
+            case StatusValue::SWG_OPEN:   sv = "SWG_OPEN";   break;
+            case StatusValue::SWG_CLOSED: sv = "SWG_CLOSED"; break;
+            case StatusValue::CRB_OPEN:   sv = "CRB_OPEN";   break;
+            case StatusValue::CRB_CLOSED: sv = "CRB_CLOSED"; break;
+            }
+            strncpy(entry.lastValue, sv, sizeof(entry.lastValue) - 1);
+            strncpy(entry.topicType, "STATUS", sizeof(entry.topicType) - 1);
+        }
+
+        // Formatuj timestamp
+        std::time_t ts = msg.timestamp;
+        std::tm* tmInfo = std::localtime(&ts);
+        std::strftime(entry.lastTime, sizeof(entry.lastTime), "%H:%M:%S", tmInfo);
+
+        // Dodaj u cirkularan buffer zadnjih MAX_RECENT poruka
+        RecentMsg& rec = recentMessages[recentHead];
+        strncpy(rec.topic, msg.topic, sizeof(rec.topic) - 1);
+        strncpy(rec.type, entry.topicType, sizeof(rec.type) - 1);
+        strncpy(rec.value, entry.lastValue, sizeof(rec.value) - 1);
+        strncpy(rec.time, entry.lastTime, sizeof(rec.time) - 1);
+        snprintf(rec.publisher, sizeof(rec.publisher), "%s:%d",
+            msg.publisher_host, msg.publisher_port);
+        recentHead = (recentHead + 1) % MAX_RECENT;
+        if (recentCount < MAX_RECENT) recentCount++;
+
+        // Serialize message once
+        serialized = Serialization::serialize(msg);
+
+        // Kopiraj listu subscribera dok drzimo lock
+        for (auto it = entry.subscribers.begin(); it != entry.subscribers.end(); ++it) {
+            subscribersCopy.push_back(*it);
+        }
+
+    } // <- lock_guard se ovdje automatski oslobadja (ispravno!)
+
+    int totalSubscribers = (int)subscribersCopy.size();
     std::cout << "[PubSubEngine] Delivering to " << totalSubscribers << " subscriber(s)..." << std::endl;
 
-    // Release lock before spawning delivery threads
-    lock.~lock_guard();
-
-    // Spawn a thread for each subscriber to deliver in parallel
+    // Spawn a thread for each subscriber to deliver in parallel (van locka)
     std::vector<std::thread> deliveryThreads;
     for (const auto& addr : subscribersCopy) {
         deliveryThreads.emplace_back(&PubSubEngine::deliverToSubscriber, this, addr, msg, serialized);
@@ -373,7 +383,7 @@ void PubSubEngine::getAllTopics(char topicList[][64], int& count, int maxCount) 
 }
 
 // ============================================================
-//  getStatsJson — vraca JSON za HTTP monitoring dashboard
+//  getStatsJson - vraca JSON za HTTP monitoring dashboard
 // ============================================================
 std::string PubSubEngine::getStatsJson() {
     std::lock_guard<std::mutex> lock(engineMutex);

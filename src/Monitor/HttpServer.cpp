@@ -250,7 +250,6 @@ tr:hover td{background:#1e2030;}
     <span class="pulse"></span>
     <div>
       <h1>PubSub Engine Monitor</h1>
-      <div class="sub">IKP Projekat &bull; FTN Novi Sad &bull; Industrijski komunikacijski protokoli</div>
     </div>
   </div>
   <div class="hdr-right">
